@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Procurement AI Analyst — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#F5F3EF;--surface:#FFFFFF;--surface2:#FAF8F4;--text:#1B232B;--muted:#5B6670;--accent:#0E8F7A;--accent-ink:#fff;--border:#DDD8CE;--danger:#B23A3A;}
+@media (prefers-color-scheme: dark){:root{--bg:#12181C;--surface:#1B232B;--surface2:#202A32;--text:#E8ECEF;--muted:#8A97A3;--accent:#33C2A6;--accent-ink:#0B1210;--border:#2A333B;--danger:#E07070;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace}
+.wrap{max-width:900px;margin:0 auto;padding:26px}
+.header-row{display:flex;gap:12px;align-items:flex-start;margin-bottom:6px}
+h1{font-size:19px;margin:0}
+p.sub{color:var(--muted);font-size:13px;margin:2px 0 22px}
+.badge{display:inline-block;font-size:11px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:3px 10px;margin-left:8px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+select,input[type=text]{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit;min-width:170px}
+.dropzone{border:1.5px dashed var(--border);border-radius:9px;padding:22px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;flex:1;min-width:220px}
+.dropzone.drag{border-color:var(--accent);color:var(--accent)}
+.btn{background:var(--accent);color:var(--accent-ink);border:none;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:11px}
+.status{font-size:12px;margin-top:8px;color:var(--muted)}
+.status.err{color:var(--danger)}
+.status.ok{color:var(--accent)}
+.empty{color:var(--muted);font-size:12.5px;padding:14px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header-row">
+    <div>
+      <h1>📦 Procurement AI Analyst <span class="badge">Admin — internal only</span></h1>
+      <p class="sub">Halaman ini untuk kamu upload & kelola source data. Jangan share link ini ke client — kasih mereka link chat.html saja.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <div><label>Jenis data</label><select id="typeSelect"></select></div>
+      <div id="periodWrap" style="display:none"><label>Periode (mis. 2026-08)</label><input type="text" id="periodInput" placeholder="2026-08"></div>
+      <div class="dropzone" id="dropzone">Drag file ke sini, atau klik untuk pilih file (.xlsx, .xls, .csv)
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
+      </div>
+      <button class="btn" id="uploadBtn" disabled>Simpan ke Firebase</button>
+    </div>
+    <div class="status" id="uploadStatus"></div>
+  </div>
+
+  <div class="panel">
+    <label style="margin-bottom:12px">Data tersimpan</label>
+    <table id="datasetTable"><tbody></tbody></table>
+    <div class="empty" id="datasetEmpty" style="display:none">Belum ada data yang diupload.</div>
+  </div>
+</div>
+
+<script type="module">
+import { TYPES, typeMap, normalizeRows, saveDataset, deleteDataset, listDatasets } from './shared.js';
+
+const typeSelect=document.getElementById('typeSelect');
+TYPES.forEach(t=>{const o=document.createElement('option');o.value=t.key;o.textContent=t.label;typeSelect.appendChild(o);});
+const periodWrap=document.getElementById('periodWrap'),periodInput=document.getElementById('periodInput');
+function syncPeriodField(){periodWrap.style.display=typeMap[typeSelect.value].periodic?'block':'none';}
+typeSelect.onchange=syncPeriodField; syncPeriodField();
+
+const dropzone=document.getElementById('dropzone'),fileInput=document.getElementById('fileInput'),uploadBtn=document.getElementById('uploadBtn'),uploadStatus=document.getElementById('uploadStatus');
+let pendingFile=null,pendingParsed=null;
+dropzone.onclick=()=>fileInput.click();
+['dragover','dragleave','drop'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.toggle('drag',ev==='dragover');}));
+dropzone.addEventListener('drop',e=>{if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);});
+fileInput.onchange=()=>{if(fileInput.files[0]) handleFile(fileInput.files[0]);};
+
+function handleFile(file){
+  pendingFile=file;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const sheet=wb.Sheets[wb.SheetNames[0]];
+      pendingParsed=XLSX.utils.sheet_to_json(sheet,{defval:''});
+      dropzone.textContent=`${file.name} — ${pendingParsed.length} baris terdeteksi. Klik "Simpan" untuk menyimpan.`;
+      uploadBtn.disabled=false; uploadStatus.textContent='';uploadStatus.className='status';
+    }catch(err){ uploadStatus.textContent='Gagal membaca file: '+err.message; uploadStatus.className='status err'; uploadBtn.disabled=true; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+uploadBtn.onclick=async()=>{
+  const type=typeSelect.value, periodic=typeMap[type].periodic;
+  const period=periodic?periodInput.value.trim():'current';
+  if(periodic && !period){uploadStatus.textContent='Isi periode dulu ya (mis. 2026-08).';uploadStatus.className='status err';return;}
+  if(!pendingParsed){uploadStatus.textContent='Pilih file dulu.';uploadStatus.className='status err';return;}
+  uploadBtn.disabled=true; uploadStatus.textContent='Menyimpan ke Firebase...'; uploadStatus.className='status';
+  try{
+    const {rows,headers}=normalizeRows(pendingParsed);
+    await saveDataset(type,period,rows,headers,pendingFile.name);
+    uploadStatus.textContent=`Tersimpan: ${typeMap[type].label} (${period}) — ${rows.length} baris.`;uploadStatus.className='status ok';
+    pendingParsed=null;pendingFile=null;fileInput.value='';
+    dropzone.textContent='Drag file ke sini, atau klik untuk pilih file (.xlsx, .xls, .csv)';
+    renderDatasets();
+  }catch(err){
+    uploadStatus.textContent='Gagal simpan: '+err.message; uploadStatus.className='status err'; uploadBtn.disabled=false;
+  }
+};
+
+async function renderDatasets(){
+  const all=await listDatasets();
+  const tbody=document.querySelector('#datasetTable tbody');tbody.innerHTML='';
+  document.getElementById('datasetEmpty').style.display=all.length?'none':'block';
+  document.querySelector('#datasetTable').style.display=all.length?'table':'none';
+  if(!all.length) return;
+  const head=document.createElement('tr');
+  head.innerHTML='<th>Jenis</th><th>Periode</th><th>Baris</th><th>File</th><th>Diupload</th><th></th>';
+  tbody.appendChild(head);
+  all.sort((a,b)=>(a.type+a.period).localeCompare(b.type+b.period)).forEach(d=>{
+    const tr=document.createElement('tr');
+    const dt=new Date(d.uploadedAt);
+    tr.innerHTML=`<td>${typeMap[d.type]?typeMap[d.type].label:d.type}</td><td class="mono">${d.period==='current'?'—':d.period}</td><td class="mono">${d.rowCount}</td><td>${d.fileName||''}</td><td class="mono">${dt.toLocaleDateString('id-ID')}</td><td><button class="btn ghost" data-del="${d.id}">Hapus</button></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{b.disabled=true;await deleteDataset(b.dataset.del);renderDatasets();});
+}
+renderDatasets();
+</script>
+</body>
+</html>

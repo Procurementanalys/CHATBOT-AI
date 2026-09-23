@@ -1,0 +1,11 @@
+{
+  "name": "functions",
+  "description": "Backend kecil buat proxy panggilan ke Anthropic API dengan aman",
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-functions": "^5.0.0",
+    "firebase-admin": "^12.0.0"
+  },
+  "private": true
+}
