@@ -179,3 +179,21 @@ export async function askAIInsight(endpoint, dataSummary, userQuestion) {
     return data.text || null;
   } catch (e) { return null; }
 }
+
+// Obrolan umum (di luar forecast/MOI/breakdown/OOS) — dijawab AI senormal mungkin,
+// TAPI dikunci: kalau user nanya angka spesifik dari data perusahaan, AI dilarang
+// mengarang, dan diarahkan supaya user pakai kata kunci yang dijawab oleh rumus.
+export async function askAIGeneral(endpoint, userQuestion) {
+  if (!endpoint || endpoint.includes('GANTI')) return null;
+  const prompt = `Kamu adalah "Procurement AI Analyst", asisten AI ramah untuk tim procurement internal. Jawab dalam Bahasa Indonesia, natural dan singkat (maksimal 3-4 kalimat), layaknya asisten AI pada umumnya.
+
+ATURAN PENTING: Kamu TIDAK diberi data stock/sales/forecast/MOI/OOS perusahaan di percakapan ini. Kalau pertanyaan user menyangkut ANGKA spesifik dari data perusahaan (stock, forecast, sales, MOI, breakdown kategori, risiko OOS), JANGAN pernah mengarang angka apa pun. Untuk kasus itu, jawab singkat lalu arahkan user bertanya ulang pakai kata kunci "forecast", "MOI", "breakdown kategori ...", atau "OOS" supaya sistem menjawab pakai angka asli dari database. Untuk obrolan umum di luar itu, jawab senormal mungkin.
+
+Pertanyaan pengguna: "${userQuestion}"`;
+  try {
+    const r = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt }) });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.text || null;
+  } catch (e) { return null; }
+}

@@ -58,7 +58,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-famil
 </div>
 
 <script type="module">
-import { computeForecastAndMOI, computeBreakdown, computeOOSRisk, extractCategoryKeyword, askAIInsight, fmt } from './shared.js';
+import { computeForecastAndMOI, computeBreakdown, computeOOSRisk, extractCategoryKeyword, askAIInsight, askAIGeneral, fmt } from './shared.js';
 import { AI_ENDPOINT } from './ai-config.js';
 
 const chatlog=document.getElementById('chatlog'),chatInput=document.getElementById('chatInput'),sendBtn=document.getElementById('sendBtn');
@@ -80,11 +80,6 @@ async function send(){
 
 async function routeQuery(text){
   const lower=text.toLowerCase();
-  const greetings=['halo','hai','hi','hello','hey','pagi','siang','sore','malam','test','tes','p','permisi'];
-  const trimmed=lower.trim();
-  if(greetings.some(g=>trimmed===g||trimmed.startsWith(g+' ')||trimmed.startsWith(g+','))){
-    return 'Halo! 👋 Saya bisa bantu analisa procurement kamu. Coba tanya salah satu ini:<br>• "Hitungkan forecast bulan depan dan MOI"<br>• "Breakdown kategori Pareto A"<br>• "SKU mana yang berisiko OOS?"';
-  }
   const wantsForecast=lower.includes('forecast')||lower.includes('perkiraan')||lower.includes('proyeksi');
   const wantsMOI=lower.includes('moi');
   const wantsBreakdown=lower.includes('breakdown')||lower.includes('kategori');
@@ -136,6 +131,8 @@ async function routeQuery(text){
     return html;
   }
 
+  const generalReply=await askAIGeneral(AI_ENDPOINT, text);
+  if(generalReply) return escapeHtml(generalReply).replace(/\n/g,'<br>');
   return 'Hmm, pertanyaan itu belum saya kenali 🤔 Coba pakai kata kunci seperti:<br>• "forecast" atau "MOI"<br>• "breakdown kategori ..."<br>• "OOS" / "berisiko kehabisan stok"';
 }
 </script>
